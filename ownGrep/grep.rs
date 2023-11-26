@@ -21,7 +21,7 @@ fn main() {
         println!("Usage ./owngrep  STRING_TO_SEARCH FILE_TO_BE_SEARCHED");
         return;
     }else if argslen > 3 {
-        println!("Too many arguments");
+        println!("Too many argumments");
         println!("Usage ./owngrep  STRING_TO_SEARCH FILE_TO_BE_SEARCHED");
         return;
     }
