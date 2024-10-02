@@ -1,9 +1,7 @@
-use console::Term;
+use console::{Term, style};
 use rusqlite::{params, Connection,Result};
 use std::path::Path;
 use std::env;
-use std::fs;
-use clap::Parser;
 
 #[derive(Debug)]
 struct Item {
@@ -28,7 +26,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
     }
     let conn = Connection::open(db_file)?;
     let args: Vec<String>= env::args().collect();
-    println!("{:?}", args.len());
     if args.len() == 1 {
         let mut stmt  = conn.prepare("SELECT id, name, status FROM todo")?;
         let todo_iter = stmt.query_map([],|row|{
@@ -39,16 +36,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
             })
         })?;
         for item in todo_iter{
-                println!("{:?}", item);
+            let  item_re = item.unwrap_or(Item{id:0,name:"".to_string(),status:"".to_string()});
+            if item_re.id!=0{
+                let term = Term::stdout();
+                match item_re.status.as_str() {
+                    "created" => term.write_line(&format!(" {} {} ", style(item_re.id), style(item_re.name).blink())).unwrap(),
+                    "progress"=> term.write_line(&format!(" {} {} ", style(item_re.id), style(item_re.name).green())).unwrap(),
+                    "done"=>term.write_line(&format!(" {} {} ", style(item_re.id), style(item_re.name).red().strikethrough())).unwrap(),
+                    _=>println!("nothing")
+                }
+            }
         }
     }else if args.len() > 1 {
         let action = args[1].as_str();
-       let res = match action {
-            "add" => add_todo(&conn, &args),
-            "done" => mark_as_done(&conn, &args),
+        let res = match action {
+            "add"               => add_todo(&conn, &args),
+            "done"|"progress"   => change_status(&conn, &args, action),
+            "delete"            => delete_todo(&conn, &args),
             _=> Ok(())
         };
-        println!("{:?}", res);
     }
     Ok(())
 }
@@ -56,19 +62,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
 fn add_todo(conn:&Connection, arg:&Vec<String>)->Result<()>{
     for s in &arg[2..]{
         println!("{:?}", s);
-        conn.execute("INSERT INTO todo (name, status) VALUES(?1, ?2)", params![s, "inprogress"])?;
+        conn.execute("INSERT INTO todo (name, status) VALUES(?1, ?2)", params![s, "created"])?;
     }
     Ok(())
 }
-fn mark_as_done(conn:&Connection, arg:&Vec<String> ) -> Result<()>{
+
+fn change_status(conn:&Connection, arg:&Vec<String>, res:&str ) -> Result<()>{
     for s in &arg[2..]{
-        let potentialId = s.parse::<i32>();
-        let finalId = match potentialId{
-            Ok(value) =>value,
-            Err(e)=> 0,
-        };
-        if finalId >0{ 
-        conn.execute("UPDATE todo SET status=?1 WHERE id=?2", params!["done", finalId ])?;
+        
+        let final_id = s.parse::<i32>().unwrap_or(0);
+        if final_id >0{ 
+        conn.execute("UPDATE todo SET status=?1 WHERE id=?2", params![res.to_string(), final_id ])?;
+        }
+    }
+    Ok(())
+}
+
+fn delete_todo(conn:&Connection, arg:&Vec<String>) -> Result<()>{
+    for s in &arg[2..]{
+        
+        let final_id = s.parse::<i32>().unwrap_or(0);
+        if final_id >0{ 
+        conn.execute("DELETE FROM todo WHERE id=?1", params![final_id ])?;
         }
     }
     Ok(())
