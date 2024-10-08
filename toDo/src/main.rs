@@ -49,7 +49,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>>{
         }
     }else if args.len() > 1 {
         let action = args[1].as_str();
-        let res = match action {
+        let _res = match action {
             "add"               => add_todo(&conn, &args),
             "done"|"progress"   => change_status(&conn, &args, action),
             "delete"            => delete_todo(&conn, &args),
