@@ -4,11 +4,35 @@ use reqwest_oauth1::OAuthClientProvider;
 use scraper::{Html, Selector};
 use dotenv::dotenv;
 use std::env;
-use serde::Serialize;
 use serde_json::json;
 use std::error::Error;
 use tokio;
 
+
+fn split_into_chunks(text: &str, chunk_size: usize) -> Vec<String> {
+    let mut chunks = Vec::new();
+    let mut start = 0;
+
+    while start < text.len() {
+        let mut end = start + chunk_size;
+
+        if end >= text.len() {
+            end = text.len();
+        }
+
+        if end < text.len() {
+            if let Some(last_space) = text[start..end].rfind(' ') {
+                end = start + last_space;
+            }
+        }
+
+        let chunk = text[start..end].to_string();
+        chunks.push(chunk);
+
+        start = end + 1;
+    }
+    chunks
+}
 
 async fn post_tweet_v2(
     consumer_key: &str,
@@ -20,46 +44,74 @@ async fn post_tweet_v2(
 
     let url = "https://api.twitter.com/2/tweets";
     println!("here2");
-    let tweet_text = if tweet_text.chars().count() > 280 {
-        &tweet_text[..280]
-    } else {
-        tweet_text
-    };
+    let tweet_potential = split_into_chunks(tweet_text, 280);
+    let tweet_text = &tweet_potential[0];
     println!("{:?}", tweet_text);
     let tweet = json!({
         "text": tweet_text.to_string(),
     });
     let secrets = reqwest_oauth1::Secrets::new(consumer_key, consumer_secret).token(access_token, access_token_secret);
 
-// Create an HTTP client
 
- let client = Client::new();
- let body = serde_json::to_string(&tweet)?;
-// // Send the POST request with headers and JSON body
-// let response = client
-//     .post(url)
-//     .oauth1(secrets)
-//     .json(body)
-//     .send()
-//     .await?;
-// Build a request using reqwest
 
-let response = client.oauth1(secrets)
-.post(url)
-.header("Content-Type", "application/json") // Set the content type header to JSON
-        .body(body)
-.send().await?;
+    let client = Client::new();
+    let body = serde_json::to_string(&tweet)?;
 
-    // Check if the request was successful
-    if response.status().is_success() {
-        println!("Tweet posted successfully!");
-        Ok(())
-    } else {
-        // If an error occurred, print the error response
+
+    let response = client
+    .oauth1(secrets.clone())
+    .post(url)
+    .header("Content-Type", "application/json") // Set the content type header to JSON
+    .body(body)
+    .send().await?;
+
+    if !response.status().is_success() {
         let error_text = response.text().await?;
         eprintln!("Failed to post tweet: {}", error_text);
-        Err("Failed to post the tweet".into())
+        return Err("Failed to post the tweet".into())
     }
+
+    let response_json: serde_json::Value = response.json().await?;
+
+    let mut previous_tweet_id = response_json["data"]["id"]
+        .as_str()
+        .ok_or("Failed to extract tweet ID")?
+        .to_string();
+
+    for tweets in &tweet_potential[1..] {
+        let tweet = json!({
+            "text": tweets,
+            "reply": {
+                "in_reply_to_tweet_id": previous_tweet_id,
+            }
+        });
+
+        let body = serde_json::to_string(&tweet)?;
+
+        let client2= Client::new();
+        let response = client2
+            .oauth1(secrets.clone())
+            .post(url)
+            .header("Content-Type", "application/json")
+            .body(body) 
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            eprintln!("Failed to post reply: {}", error_text);
+            return Err("Failed to post the reply tweet".into());
+        }
+
+        let response_json: serde_json::Value = response.json().await?;
+        previous_tweet_id = response_json["data"]["id"]
+            .as_str()
+            .ok_or("Failed to extract tweet ID")?
+            .to_string();
+
+        println!("Reply posted successfully with ID: {}", previous_tweet_id);
+    }
+    Ok(())
 }
 
 #[tokio::main]
