@@ -22,6 +22,7 @@ fn main() {
         Err(why)=> panic!("couldn't open and read the file because {}", why),
         Ok(contents) => contents
     };
+    
     for (line_num, line) in BufReader::new(file).lines().enumerate(){
         if let Ok(line) = line{
             if line.contains(&args[1]){
@@ -29,6 +30,4 @@ fn main() {
             }
         }
     }
-    
-
 }
